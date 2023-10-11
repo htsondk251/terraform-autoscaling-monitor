@@ -41,7 +41,8 @@ resource "aws_security_group" "instance" {
     from_port   = var.server_port
     to_port     = var.server_port
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+#    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = [aws_security_group.alb.id]
   }
 
   ingress {
@@ -59,6 +60,7 @@ resource "aws_security_group" "instance" {
   }
 }
 
+//todo: create vpc - subnet
 data "aws_vpc" "default" {
   default = true
 }
@@ -70,7 +72,7 @@ data "aws_subnets" "default" {
   }
 }
 
-
+//todo: move elb to public subnet and ec2 to private subnet
 resource "aws_lb" "example" {
   name               = "terraform-asg-example"
   load_balancer_type = "application"
@@ -166,10 +168,11 @@ resource "aws_autoscaling_group" "example" {
   }
 }
 
+//todo: disable scale-in and create separate scale-in policy
+//todo: create cloudwatch alarm CPU75, CPU50 and scale-in
 resource "aws_autoscaling_policy" "avg-cpu-policy-maintain-at-xx" {
   autoscaling_group_name    = aws_autoscaling_group.example.id
   name                      = "avg-cpu-policy-maintain-at-xx"
-  #  describe                  = "average ASG CPUUtilization greater than xx"
   policy_type               = "TargetTrackingScaling"
   estimated_instance_warmup = 180 # defaults to ASG default cooldown 300 seconds if not set
 
@@ -178,6 +181,7 @@ resource "aws_autoscaling_policy" "avg-cpu-policy-maintain-at-xx" {
     predefined_metric_specification {
       predefined_metric_type = "ASGAverageCPUUtilization"
     }
+#    disable_scale_in = true
   }
 }
 
