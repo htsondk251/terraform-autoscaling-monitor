@@ -1,5 +1,17 @@
 provider "aws" {
-  region = "ap-southeast-1"
+  region = var.region
+}
+
+//backend
+terraform {
+  backend "s3" {
+    bucket = "demo-autoscaling-monitor-state"
+    key = "global/s3/terraform.tfstate"
+    region = "ap-southeast-1"
+
+    dynamodb_table = "demo-autoscaling-monitor-locks"
+    encrypt = true
+  }
 }
 
 data "aws_ami" "amazon-linux-2" {
@@ -199,13 +211,6 @@ resource "aws_lb_listener_rule" "asg" {
   }
 }
 
-#
-#terraform {
-#  backend "s3" {
-#    key = "example/terraform.tfstate"
-#  }
-#}
-
 //dashboard
 resource "aws_cloudwatch_dashboard" "monitor-ASG" {
   dashboard_name = "monitor-ASG"
@@ -230,7 +235,7 @@ resource "aws_cloudwatch_dashboard" "monitor-ASG" {
           ]
           period = 60
           stat   = "Average"
-          region = "ap-southeast-1"
+          region = var.region
           title  = "ASG Average CPUUtilization"
         }
       },
@@ -252,7 +257,7 @@ resource "aws_cloudwatch_dashboard" "monitor-ASG" {
           ]
           period = 60
           stat   = "Average"
-          region = "ap-southeast-1"
+          region = var.region
           title  = "ASG Average Instances"
         }
       }

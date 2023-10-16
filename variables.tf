@@ -9,3 +9,8 @@ variable "security_group_name" {
   type        = string
   default     = "terraform-example-instance"
 }
+
+variable "region" {
+  type = string
+  default = "ap-southeast-1"
+}
