@@ -3,34 +3,34 @@ provider "aws" {
 }
 
 //backend
-terraform {
-  backend "s3" {
-    bucket = "demo-autoscaling-monitor-state"
-    key = "global/s3/terraform.tfstate"
-    region = "ap-southeast-1"
+# terraform {
+#   backend "s3" {
+#     bucket = "demo-autoscaling-monitor-state"
+#     key = "global/s3/terraform.tfstate"
+#     region = var.region
+#     dynamodb_table = "demo-autoscaling-monitor-locks"
+#     encrypt        = true
+#   }
+# }
 
-    dynamodb_table = "demo-autoscaling-monitor-locks"
-    encrypt = true
+data "aws_ami" "amazon_linux_2" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
   }
 }
 
-data "aws_ami" "amazon-linux-2" {
-    most_recent = true
-
-    filter {
-        name   = "owner-alias"
-        values = ["amazon"]
-    }
-
-    filter {
-        name   = "name"
-        values = ["amzn2-ami-hvm-*-x86_64-gp2"]
-    }
-}
-
 resource "aws_launch_template" "example" {
-  #  image_id             = "ami-0db1894e055420bc0"
-  image_id               = "ami-0a07a2c738f040240"
+  # image_id               = "ami-05caa5aa0186b660f"
+  image_id               = data.aws_ami.amazon_linux_2.id
   instance_type          = "t2.micro"
   vpc_security_group_ids = [aws_security_group.instance.id]
   key_name               = "Son-SG"
@@ -46,50 +46,12 @@ resource "aws_launch_template" "example" {
   }
 }
 
-resource "aws_security_group" "instance" {
-  name = "terraform-example-instance"
-
-  ingress {
-    from_port   = var.server_port
-    to_port     = var.server_port
-    protocol    = "tcp"
-#    cidr_blocks = ["0.0.0.0/0"]
-    security_groups = [aws_security_group.alb.id]
-  }
-
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks  = ["42.112.15.4/32"]
-  }
-
-  egress {
-    from_port        = 0
-    to_port          = 0
-    protocol         = "-1"
-    cidr_blocks      = ["0.0.0.0/0"]
-  }
-}
-
-//todo: create vpc - subnet
-data "aws_vpc" "default" {
-  default = true
-}
-
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
-
 //todo: move elb to public subnet and ec2 to private subnet
 resource "aws_lb" "example" {
   name               = "terraform-asg-example"
   load_balancer_type = "application"
-  subnets            = data.aws_subnets.default.ids
-  security_groups    = [aws_security_group.alb.id]
+  subnets            = [aws_subnet.public-subnet-1a.id, aws_subnet.public-subnet-1b.id]
+  security_groups    = [aws_security_group.alb_sg.id]
 }
 
 resource "aws_lb_listener" "http" {
@@ -108,33 +70,14 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-resource "aws_security_group" "alb" {
-  name = "terraform-example-alb"
-  # Allow inbound HTTP requests
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Allow all outbound requests
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-
 resource "aws_lb_target_group" "asg" {
   name     = "terraform-asg-example"
   port     = var.server_port
   protocol = "HTTP"
-  vpc_id   = data.aws_vpc.default.id
+  vpc_id   = aws_vpc.vpc.id
 
   health_check {
+    enabled             = true
     path                = "/"
     protocol            = "HTTP"
     matcher             = "200"
@@ -146,10 +89,11 @@ resource "aws_lb_target_group" "asg" {
 }
 
 resource "aws_autoscaling_group" "example" {
-  name_prefix = "demo-"
-  vpc_zone_identifier  = data.aws_subnets.default.ids
-  target_group_arns    = [aws_lb_target_group.asg.arn]
-  health_check_type    = "ELB"
+  name = "${var.PROJECT_NAME}-asg"
+  # vpc_zone_identifier = [aws_subnet.private-subnet-1a.id, aws_subnet.private-subnet-1b.id]
+  vpc_zone_identifier = [aws_subnet.public-subnet-1a.id, aws_subnet.public-subnet-1b.id]
+  target_group_arns   = [aws_lb_target_group.asg.arn]
+  health_check_type   = "ELB"
 
   enabled_metrics = [
     "GroupInServiceInstances"
@@ -166,12 +110,12 @@ resource "aws_autoscaling_group" "example" {
       #instance_warmup = 300 # Default behavior is to use the Auto Scaling Group's health check grace period.
       min_healthy_percentage = 50
     }
-    triggers = [ /*"launch_template",*/ "desired_capacity" ] # You can add any argument from ASG here, if those has changes, ASG Instance Refresh will trigger
+    triggers = [/*"launch_template",*/ "desired_capacity"] # You can add any argument from ASG here, if those has changes, ASG Instance Refresh will trigger
   }
 
   desired_capacity = 2
-  min_size = 2
-  max_size = 5
+  min_size         = 2
+  max_size         = 5
 
   tag {
     key                 = "Name"
@@ -193,8 +137,34 @@ resource "aws_autoscaling_policy" "avg-cpu-policy-maintain-at-xx" {
     predefined_metric_specification {
       predefined_metric_type = "ASGAverageCPUUtilization"
     }
-#    disable_scale_in = true
+    disable_scale_in = true
   }
+}
+
+resource "aws_autoscaling_policy" "scale_in" {
+  name                   = "${var.PROJECT_NAME}-asg-scale-in"
+  autoscaling_group_name = aws_autoscaling_group.example.name
+  adjustment_type        = "ChangeInCapacity"
+  scaling_adjustment     = "-1" # decreasing instance by 1 
+  cooldown               = "300"
+  policy_type            = "SimpleScaling"
+}
+
+resource "aws_cloudwatch_metric_alarm" "scale_in_alarm" {
+  alarm_name          = "${var.PROJECT_NAME}-asg-scale-in-alarm"
+  alarm_description   = "asg-scale-in-cpu-alarm"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "120"
+  statistic           = "Average"
+  threshold           = "5" # Instance will scale in when CPU utilization is lower than 5 %
+  dimensions = {
+    "AutoScalingGroupName" = aws_autoscaling_group.example.name
+  }
+  actions_enabled = true
+  alarm_actions   = [aws_autoscaling_policy.scale_in.arn]
 }
 
 resource "aws_lb_listener_rule" "asg" {
@@ -209,58 +179,4 @@ resource "aws_lb_listener_rule" "asg" {
     type             = "forward"
     target_group_arn = aws_lb_target_group.asg.arn
   }
-}
-
-//dashboard
-resource "aws_cloudwatch_dashboard" "monitor-ASG" {
-  dashboard_name = "monitor-ASG"
-
-  dashboard_body = jsonencode({
-    widgets = [
-      {
-        type   = "metric"
-        x      = 0
-        y      = 0
-        width  = 12
-        height = 6
-
-        properties = {
-          metrics = [
-            [
-              "AWS/EC2",
-              "CPUUtilization",
-              "AutoScalingGroupName",
-              aws_autoscaling_group.example.id
-            ]
-          ]
-          period = 60
-          stat   = "Average"
-          region = var.region
-          title  = "ASG Average CPUUtilization"
-        }
-      },
-      {
-        type   = "metric"
-        x      = 12
-        y      = 0
-        width  = 12
-        height = 6
-
-        properties = {
-          metrics = [
-            [
-              "AWS/AutoScaling",
-              "GroupInServiceInstances",
-              "AutoScalingGroupName",
-              aws_autoscaling_group.example.id
-            ]
-          ]
-          period = 60
-          stat   = "Average"
-          region = var.region
-          title  = "ASG Average Instances"
-        }
-      }
-    ]
-  })
 }
