@@ -28,11 +28,10 @@ data "aws_ami" "amazon_linux_2" {
   }
 }
 
-resource "aws_launch_template" "example" {
-  # image_id               = "ami-05caa5aa0186b660f"
+resource "aws_launch_template" "tpl" {
   image_id               = data.aws_ami.amazon_linux_2.id
   instance_type          = "t2.micro"
-  vpc_security_group_ids = [aws_security_group.instance.id]
+  vpc_security_group_ids = [aws_security_group.sg_ec2.id]
   key_name               = "Son-SG"
 
   user_data = filebase64("user_data.sh")
@@ -47,15 +46,15 @@ resource "aws_launch_template" "example" {
 }
 
 //todo: move elb to public subnet and ec2 to private subnet
-resource "aws_lb" "example" {
-  name               = "terraform-asg-example"
+resource "aws_lb" "alb" {
+  name               = "${var.PROJECT_NAME}-alb"
   load_balancer_type = "application"
   subnets            = [aws_subnet.public-subnet-1a.id, aws_subnet.public-subnet-1b.id]
-  security_groups    = [aws_security_group.alb_sg.id]
+  security_groups    = [aws_security_group.sg_alb.id]
 }
 
 resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.example.arn
+  load_balancer_arn = aws_lb.alb.arn
   port              = 80
   protocol          = "HTTP"
 
@@ -70,8 +69,8 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-resource "aws_lb_target_group" "asg" {
-  name     = "terraform-asg-example"
+resource "aws_lb_target_group" "tg" {
+  name     = "${var.PROJECT_NAME}-tg"
   port     = var.server_port
   protocol = "HTTP"
   vpc_id   = aws_vpc.vpc.id
@@ -88,20 +87,20 @@ resource "aws_lb_target_group" "asg" {
   }
 }
 
-resource "aws_autoscaling_group" "example" {
-  name = "${var.PROJECT_NAME}-asg"
-  # vpc_zone_identifier = [aws_subnet.private-subnet-1a.id, aws_subnet.private-subnet-1b.id]
-  vpc_zone_identifier = [aws_subnet.public-subnet-1a.id, aws_subnet.public-subnet-1b.id]
-  target_group_arns   = [aws_lb_target_group.asg.arn]
-  health_check_type   = "ELB"
+resource "aws_autoscaling_group" "asg" {
+  name                = "${var.PROJECT_NAME}-asg"
+  vpc_zone_identifier = [aws_subnet.private-subnet-1a.id, aws_subnet.private-subnet-1b.id]
+  # vpc_zone_identifier = [aws_subnet.public-subnet-1a.id, aws_subnet.public-subnet-1b.id]
+  target_group_arns = [aws_lb_target_group.tg.arn]
+  health_check_type = "ELB"
 
   enabled_metrics = [
     "GroupInServiceInstances"
   ]
 
   launch_template {
-    id      = aws_launch_template.example.id
-    version = aws_launch_template.example.latest_version
+    id      = aws_launch_template.tpl.id
+    version = aws_launch_template.tpl.latest_version
   }
 
   instance_refresh {
@@ -127,7 +126,7 @@ resource "aws_autoscaling_group" "example" {
 //todo: disable scale-in and create separate scale-in policy
 //todo: create cloudwatch alarm CPU75, CPU50 and scale-in
 resource "aws_autoscaling_policy" "avg-cpu-policy-maintain-at-xx" {
-  autoscaling_group_name    = aws_autoscaling_group.example.id
+  autoscaling_group_name    = aws_autoscaling_group.asg.id
   name                      = "avg-cpu-policy-maintain-at-xx"
   policy_type               = "TargetTrackingScaling"
   estimated_instance_warmup = 180 # defaults to ASG default cooldown 300 seconds if not set
@@ -143,7 +142,7 @@ resource "aws_autoscaling_policy" "avg-cpu-policy-maintain-at-xx" {
 
 resource "aws_autoscaling_policy" "scale_in" {
   name                   = "${var.PROJECT_NAME}-asg-scale-in"
-  autoscaling_group_name = aws_autoscaling_group.example.name
+  autoscaling_group_name = aws_autoscaling_group.asg.name
   adjustment_type        = "ChangeInCapacity"
   scaling_adjustment     = "-1" # decreasing instance by 1 
   cooldown               = "300"
@@ -161,7 +160,7 @@ resource "aws_cloudwatch_metric_alarm" "scale_in_alarm" {
   statistic           = "Average"
   threshold           = "5" # Instance will scale in when CPU utilization is lower than 5 %
   dimensions = {
-    "AutoScalingGroupName" = aws_autoscaling_group.example.name
+    "AutoScalingGroupName" = aws_autoscaling_group.asg.name
   }
   actions_enabled = true
   alarm_actions   = [aws_autoscaling_policy.scale_in.arn]
@@ -177,6 +176,6 @@ resource "aws_lb_listener_rule" "asg" {
   }
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.asg.arn
+    target_group_arn = aws_lb_target_group.tg.arn
   }
 }

@@ -17,7 +17,7 @@ resource "aws_cloudwatch_dashboard" "monitor-ASG" {
               "AWS/EC2",
               "CPUUtilization",
               "AutoScalingGroupName",
-              aws_autoscaling_group.example.id
+              aws_autoscaling_group.asg.id
             ]
           ]
           period = 60
@@ -39,7 +39,7 @@ resource "aws_cloudwatch_dashboard" "monitor-ASG" {
               "AWS/AutoScaling",
               "GroupInServiceInstances",
               "AutoScalingGroupName",
-              aws_autoscaling_group.example.id
+              aws_autoscaling_group.asg.id
             ]
           ]
           period = 60

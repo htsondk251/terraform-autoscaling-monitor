@@ -1,13 +1,12 @@
-resource "aws_security_group" "instance" {
-  //todo:rename for be more meaningful
-  name   = "terraform-example-instance"
+resource "aws_security_group" "sg_ec2" {
+  name   = "${var.PROJECT_NAME}-sg_ec2"
   vpc_id = aws_vpc.vpc.id
 
   ingress {
     from_port       = var.server_port
     to_port         = var.server_port
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb_sg.id]
+    security_groups = [aws_security_group.sg_alb.id]
   }
 
   ingress {
@@ -27,8 +26,8 @@ resource "aws_security_group" "instance" {
 }
 
 
-resource "aws_security_group" "alb_sg" {
-  name   = "terraform-example-alb_sg"
+resource "aws_security_group" "sg_alb" {
+  name   = "${var.PROJECT_NAME}-sg_alb"
   vpc_id = aws_vpc.vpc.id
 
   # Allow inbound HTTP requests

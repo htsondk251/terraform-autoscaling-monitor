@@ -50,7 +50,7 @@ resource "aws_route_table" "public_route_table" {
   }
 
   tags = {
-    Name = "Public-RT"
+    Name = "public-rt"
   }
 }
 
@@ -62,6 +62,37 @@ resource "aws_route_table_association" "public-subnet-1a_route_table_association
 resource "aws_route_table_association" "public-subnet-1b_route_table_association" {
   subnet_id      = aws_subnet.public-subnet-1b.id
   route_table_id = aws_route_table.public_route_table.id
+}
+
+resource "aws_eip" "nat_gw_eip" {
+  domain = "vpc"
+}
+
+resource "aws_nat_gateway" "nat_gateway" {
+  allocation_id = aws_eip.nat_gw_eip.id
+  subnet_id     = aws_subnet.public-subnet-1a.id
+
+  tags = {
+    Name = "${var.PROJECT_NAME}-nat-gw"
+  }
+
+  depends_on = [
+    aws_internet_gateway.internet_gateway,
+    aws_eip.nat_gw_eip
+  ]
+}
+
+resource "aws_route_table" "private_route_table" {
+  vpc_id = aws_vpc.vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_nat_gateway.nat_gateway.id
+  }
+
+  tags = {
+    Name = "private-rt"
+  }
 }
 
 resource "aws_subnet" "private-subnet-1a" {
@@ -84,4 +115,14 @@ resource "aws_subnet" "private-subnet-1b" {
   tags = {
     Name = "private-subnet-1b"
   }
+}
+
+resource "aws_route_table_association" "private-subnet-1a_route_table_association" {
+  subnet_id      = aws_subnet.private-subnet-1a.id
+  route_table_id = aws_route_table.private_route_table.id
+}
+
+resource "aws_route_table_association" "private-subnet-1b_route_table_association" {
+  subnet_id      = aws_subnet.private-subnet-1b.id
+  route_table_id = aws_route_table.private_route_table.id
 }
