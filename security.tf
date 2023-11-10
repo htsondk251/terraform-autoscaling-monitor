@@ -7,6 +7,7 @@ resource "aws_security_group" "sg_ec2" {
     to_port         = var.server_port
     protocol        = "tcp"
     security_groups = [aws_security_group.sg_alb.id]
+    # cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {

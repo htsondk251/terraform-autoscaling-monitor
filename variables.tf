@@ -54,3 +54,28 @@ variable "PRIVATE_SUBNET_1C_CIDR" {
   type    = string
   default = "172.128.12.0/24"
 }
+
+variable "KEY_PAIR" {
+  type    = string
+  default = "Son-SG"
+}
+
+variable "USER_DATA_FILE" {
+  type    = string
+  default = "config.sh"
+}
+
+variable "ASG_DESIRED_CAPACITY" {
+  type    = number
+  default = 1
+}
+
+variable "ASG_MAX_SIZE" {
+  type    = number
+  default = 5
+}
+
+variable "ASG_MIN_SIZE" {
+  type    = number
+  default = 1
+}

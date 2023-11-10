@@ -18,13 +18,13 @@ data "aws_ami" "amazon_linux_2" {
   owners      = ["amazon"]
 
   filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
   }
 
   filter {
-    name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+    name   = "virtualization-type"
+    values = ["hvm"]
   }
 }
 
@@ -32,9 +32,9 @@ resource "aws_launch_template" "tpl" {
   image_id               = data.aws_ami.amazon_linux_2.id
   instance_type          = "t2.micro"
   vpc_security_group_ids = [aws_security_group.sg_ec2.id]
-  key_name               = "Son-SG"
+  key_name               = var.KEY_PAIR
 
-  user_data = filebase64("user_data.sh")
+  user_data = filebase64("config.sh")
 
   monitoring {
     enabled = true
@@ -45,7 +45,6 @@ resource "aws_launch_template" "tpl" {
   }
 }
 
-//todo: move elb to public subnet and ec2 to private subnet
 resource "aws_lb" "alb" {
   name               = "${var.PROJECT_NAME}-alb"
   load_balancer_type = "application"
@@ -90,9 +89,8 @@ resource "aws_lb_target_group" "tg" {
 resource "aws_autoscaling_group" "asg" {
   name                = "${var.PROJECT_NAME}-asg"
   vpc_zone_identifier = [aws_subnet.private-subnet-1a.id, aws_subnet.private-subnet-1b.id]
-  # vpc_zone_identifier = [aws_subnet.public-subnet-1a.id, aws_subnet.public-subnet-1b.id]
-  target_group_arns = [aws_lb_target_group.tg.arn]
-  health_check_type = "ELB"
+  target_group_arns   = [aws_lb_target_group.tg.arn]
+  health_check_type   = "ELB"
 
   enabled_metrics = [
     "GroupInServiceInstances"
@@ -112,9 +110,9 @@ resource "aws_autoscaling_group" "asg" {
     triggers = [/*"launch_template",*/ "desired_capacity"] # You can add any argument from ASG here, if those has changes, ASG Instance Refresh will trigger
   }
 
-  desired_capacity = 2
-  min_size         = 2
-  max_size         = 5
+  desired_capacity = var.ASG_DESIRED_CAPACITY
+  min_size         = var.ASG_MIN_SIZE
+  max_size         = var.ASG_MAX_SIZE
 
   tag {
     key                 = "Name"
@@ -123,8 +121,6 @@ resource "aws_autoscaling_group" "asg" {
   }
 }
 
-//todo: disable scale-in and create separate scale-in policy
-//todo: create cloudwatch alarm CPU75, CPU50 and scale-in
 resource "aws_autoscaling_policy" "avg-cpu-policy-maintain-at-xx" {
   autoscaling_group_name    = aws_autoscaling_group.asg.id
   name                      = "avg-cpu-policy-maintain-at-xx"
